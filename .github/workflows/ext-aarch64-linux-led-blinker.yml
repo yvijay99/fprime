@@ -59,12 +59,12 @@ jobs:
       - name: "Download and Setup AArch64 Linux Toolchain"
         run: |
           mkdir -p ${AARCH64_TOOLCHAIN_DIR}
-          wget -q ${AARCH64_TOOLCHAIN_URL}
+          curl -sL ${AARCH64_TOOLCHAIN_URL} -O
           tar -xf $(basename ${AARCH64_TOOLCHAIN_URL}) -C ${AARCH64_TOOLCHAIN_DIR} --strip-components 1
           echo "${AARCH64_TOOLCHAIN_DIR}/bin" >> $GITHUB_PATH
       - name: "Generate AArch64 Linux Build Cache"
         run: |
-          fprime-util generate aarch64-linux
+          fprime-util generate -f aarch64-linux
       - name: "Build AArch64 Linux"
         run: |
           fprime-util build aarch64-linux
