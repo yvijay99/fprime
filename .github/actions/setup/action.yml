@@ -10,14 +10,17 @@ runs:
     - run: git fetch --tags
       shell: bash
     # Python path should be added at a higher level
-    - run: pip3 install --user setuptools_scm wheel urllib3
+    - run: python3 -m venv venv
       shell: bash
 
-    - run: pip3 install --user -U -r ${{ inputs.location }}/requirements.txt
+    - run: ./venv/bin/pip install setuptools_scm wheel urllib3
       shell: bash
 
-    # Add this for macOS
-    - run: echo "$(python3 -m site --user-base)/bin" >> $GITHUB_PATH
+    - run: ./venv/bin/pip install -U -r ${{ inputs.location }}/requirements.txt
+      shell: bash
+
+    # Add venv bin to PATH
+    - run: echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
       shell: bash
 
     - run: which fprime-util
