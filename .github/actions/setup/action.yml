@@ -14,7 +14,7 @@ runs:
     shell: bash
   - run: pip3 install -U -r ${{ inputs.location }}/requirements.txt
     shell: bash
-  - run: which fprime-util
+  - run: command -v fprime-util
     shell: bash
   - run: which fprime-gds
     shell: bash
