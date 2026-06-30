@@ -7,17 +7,24 @@ inputs:
 runs:
   using: "composite"
   steps:
-  - run: git fetch --tags
-    shell: bash
-  # Python path should be added at a higher level
-  - run: pip3 install setuptools_scm wheel urllib3
-    shell: bash
-  - run: pip3 install -U -r ${{ inputs.location }}/requirements.txt
-    shell: bash
-  - run: command -v fprime-util
-    shell: bash
-  - run: which fprime-gds
-    shell: bash
-  - run: which fpp-check
-    shell: bash
-    
+    - run: git fetch --tags
+      shell: bash
+    # Python path should be added at a higher level
+    - run: pip3 install setuptools_scm wheel urllib3
+      shell: bash
+
+    - run: pip3 install -U -r ${{ inputs.location }}/requirements.txt
+      shell: bash
+
+    # Add this for macOS
+    - run: echo "$(python3 -m site --user-base)/bin" >> $GITHUB_PATH
+      shell: bash
+
+    - run: which fprime-util
+      shell: bash
+
+    - run: which fprime-gds
+      shell: bash
+
+    - run: which fpp-check
+      shell: bash
