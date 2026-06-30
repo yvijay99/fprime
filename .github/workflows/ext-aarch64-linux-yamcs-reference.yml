@@ -38,7 +38,7 @@ jobs:
 
   cross-compilation:
     name: "Cross Compilation"
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, macOS]
     needs: get-branch
     steps:
       - name: "Checkout target repository"
