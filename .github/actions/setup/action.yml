@@ -19,8 +19,10 @@ runs:
     # Add this for macOS
     - run: echo "$(python3 -m site --user-base)/bin" >> $GITHUB_PATH
       shell: bash
-    - run: source .venv/bin/activate
+
+    - run: source fprime-venv/bin/activate
       shell: bash
+
     - run: which fprime-util
       shell: bash
 
