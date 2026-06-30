@@ -20,7 +20,7 @@ runs:
     - run: echo "$(python3 -m site --user-base)/bin" >> $GITHUB_PATH
       shell: bash
 
-    - run: source fprime-venv/bin/activate
+    - run: source fprime-yamcs-reference/fprime-venv/bin/activate
       shell: bash
 
     - run: which fprime-util
