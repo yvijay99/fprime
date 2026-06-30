@@ -10,10 +10,10 @@ runs:
     - run: git fetch --tags
       shell: bash
     # Python path should be added at a higher level
-    - run: pip3 install setuptools_scm wheel urllib3
+    - run: pip3 install --user setuptools_scm wheel urllib3
       shell: bash
 
-    - run: pip3 install -U -r ${{ inputs.location }}/requirements.txt
+    - run: pip3 install --user -U -r ${{ inputs.location }}/requirements.txt
       shell: bash
 
     # Add this for macOS
