@@ -49,17 +49,13 @@ jobs:
       - name: "Checkout F´ Repository"
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          sparse-checkout: "requirements.txt"
+          sparse-checkout-cone-mode: false
 
       - name: "Download build artifacts"
         uses: actions/download-artifact@v8
         with:
           name: aarch64-linux-artifacts
-
-      - name: "Setup F´ Tools"
-        uses: nasa/fprime-actions/setup@devel
-        with:
-          location: ${{ github.workspace }}
 
       - name: "Setup Java 17 for YAMCS"
         uses: actions/setup-java@v4
@@ -67,8 +63,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: "Install YAMCS dependencies"
+      - name: "Setup Python environment"
         run: |
+          pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
           # Install yamcs-client 1.x which has yamcs.tmtc module
           pip install "yamcs-client<2.0.0"
           pip install git+https://github.com/yvijay99/fprime-gds.git@yamcsPOC
