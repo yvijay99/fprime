@@ -39,80 +39,23 @@ jobs:
           path: aarch64-linux-artifacts
           retention-days: 5
 
-  discover-tests:
-    name: "Discover Integration Tests"
-    runs-on: ubuntu-22.04
-    needs: cross-compilation
-    outputs:
-      tests: ${{ steps.list-tests.outputs.tests }}
-    steps:
-      - name: "Download build artifacts"
-        uses: actions/download-artifact@v8
-        with:
-          name: aarch64-linux-artifacts
-      - name: "Generate test matrix from artifacts"
-        id: list-tests
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          test_dir = Path("int")
-          tests = sorted([
-              str(test_file.relative_to("."))
-              for test_file in test_dir.glob("test_*.py")
-          ])
-
-          print(f"Found {len(tests)} test files")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"tests={json.dumps(tests)}\n")
-          PY
-
-  setup-test-environment:
-    name: "Setup Base Test Environment"
+  aarch64-integration:
+    name: "AArch64 Linux Integration Tests"
     runs-on: ubuntu-22.04-arm
     needs: cross-compilation
+    env:
+      DEPLOYMENT: FprimeYamcsReference_YamcsDeployment
     steps:
-      - name: "Checkout F´"
+      - name: "Checkout F´ Repository"
         uses: actions/checkout@v4
         with:
           sparse-checkout: "requirements.txt"
           sparse-checkout-cone-mode: false
-      - name: "Setup Python virtual environment with base dependencies"
-        run: |
-          python -m venv venv
-          . venv/bin/activate
-          pip install --upgrade pip setuptools
-          pip install -r requirements.txt
-      - name: "Archive base virtual environment"
-        uses: actions/upload-artifact@v7
-        with:
-          name: base-test-venv
-          path: venv
-          retention-days: 1
 
-  aarch64-integration:
-    name: "Test: ${{ matrix.test_file }}"
-    runs-on: ubuntu-22.04-arm
-    needs: [cross-compilation, discover-tests, setup-test-environment]
-    strategy:
-      fail-fast: false
-      matrix:
-        test_file: ${{ fromJSON(needs.discover-tests.outputs.tests) }}
-    env:
-      DEPLOYMENT: FprimeYamcsReference_YamcsDeployment
-    steps:
       - name: "Download build artifacts"
         uses: actions/download-artifact@v8
         with:
           name: aarch64-linux-artifacts
-
-      - name: "Download base test environment"
-        uses: actions/download-artifact@v8
-        with:
-          name: base-test-venv
-          path: venv
 
       - name: "Setup Java 17 for YAMCS"
         uses: actions/setup-java@v4
@@ -120,10 +63,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: "Install YAMCS packages"
+      - name: "Setup Python environment"
         run: |
-          chmod +x venv/bin/*
+          python -m venv venv
           . venv/bin/activate
+          pip install --upgrade pip setuptools
+          pip install -r requirements.txt
+          # Install yamcs-client 1.x which has yamcs.tmtc module
+          pip install "yamcs-client<2.0.0"
           pip install git+https://github.com/yvijay99/fprime-gds.git@yamcsPOC
           pip install git+https://github.com/yvijay99/fprime-yamcs.git@yamcsPOC
           echo "${PWD}/venv/bin" >> "${GITHUB_PATH}"
@@ -139,18 +86,18 @@ jobs:
           fprime-yamcs --ip-client -d ./build-artifacts/aarch64-linux/${DEPLOYMENT} --logs ./ci-logs &
           sleep 15
 
-      - name: "Run test: ${{ matrix.test_file }}"
+      - name: "Run integration tests"
         run: |
           . venv/bin/activate
           pytest --dictionary ./build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/YamcsDeploymentTopologyDictionary.json \
             --deployment-config ./int/int_config.json \
             -v \
-            ${{ matrix.test_file }}
+            ./int/
 
       - name: "Archive test logs"
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: test-logs-${{ strategy.job-index }}
+          name: test-logs
           path: ci-logs
           retention-days: 5
