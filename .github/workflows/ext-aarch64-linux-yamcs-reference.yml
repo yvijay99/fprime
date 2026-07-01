@@ -93,6 +93,12 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: aarch64-linux-artifacts
+      - name: "Debug - List artifact contents"
+        run: |
+          echo "=== Listing artifact contents ==="
+          ls -laR ./build-artifacts/ || echo "build-artifacts directory not found"
+          echo "=== Looking for deployment directories ==="
+          find . -type d -name "*Deployment*" || echo "No deployment directories found"
       - name: Run Integration Tests
         run: |
            DEPLOYMENT=fprime-yamcs-reference_YamcsDeployment
