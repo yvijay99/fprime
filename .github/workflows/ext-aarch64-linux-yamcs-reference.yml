@@ -170,6 +170,7 @@ jobs:
           echo "${PWD}/venv/bin" >> "${GITHUB_PATH}"
           # Activate venv and install latest fprime-gds and fprime-yamcs
           . venv/bin/activate
+          pip install --upgrade pip setuptools
           pip install --upgrade git+https://github.com/yvijay99/fprime-gds.git@yamcsPOC
           pip install --upgrade git+https://github.com/yvijay99/fprime-yamcs.git@yamcsPOC
           # Verify yamcs-client is installed
