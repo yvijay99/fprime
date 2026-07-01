@@ -62,99 +62,130 @@ jobs:
           retention-days: 5
 
   discover-tests:
-    name: "Set integration test matrix"
+    name: "Discover Integration Tests"
     runs-on: ubuntu-22.04
     needs: cross-compilation
     outputs:
       tests: ${{ steps.list-tests.outputs.tests }}
     steps:
-      - name: "Set explicit integration test list"
+      - name: "Download build artifacts"
+        uses: actions/download-artifact@v8
+        with:
+          name: aarch64-linux-artifacts
+      - name: "Generate test matrix from artifacts"
         id: list-tests
         run: |
           python - <<'PY'
           import json
           import os
+          from pathlib import Path
 
-          tests = [
-              "int/deployment/test_cdh_core.py",
-              "int/deployment/test_cmd_PrmDb.py",
-              "int/deployment/test_cmd_dispatcher.py",
-              "int/deployment/test_cmd_dpCatalog.py",
-              "int/deployment/test_cmd_dpMgr.py",
-              "int/deployment/test_cmd_dpWriter.py",
-              "int/deployment/test_cmd_eventManager.py",
-              "int/deployment/test_cmd_fileDownlink.py",
-              "int/deployment/test_cmd_fileManager.py",
-              "int/deployment/test_cmd_health.py",
-              "int/deployment/test_cmd_sequencer.py",
-              "int/deployment/test_cmd_systemResources.py",
-              "int/deployment/test_cmd_uplink.py",
-              "int/deployment/test_cmd_version.py",
-              "int/deployment/test_file_handling.py",
-          ]
+          # Discover all test files from the artifacts
+          test_dir = Path("int/deployment")
+          if test_dir.exists():
+              tests = sorted([
+                  str(test_file.relative_to("."))
+                  for test_file in test_dir.glob("test_*.py")
+              ])
+          else:
+              # Fallback to explicit list if discovery fails
+              tests = [
+                  "int/deployment/test_cdh_core.py",
+                  "int/deployment/test_cmd_PrmDb.py",
+                  "int/deployment/test_cmd_dispatcher.py",
+                  "int/deployment/test_cmd_dpCatalog.py",
+                  "int/deployment/test_cmd_dpMgr.py",
+                  "int/deployment/test_cmd_dpWriter.py",
+                  "int/deployment/test_cmd_eventManager.py",
+                  "int/deployment/test_cmd_fileDownlink.py",
+                  "int/deployment/test_cmd_fileManager.py",
+                  "int/deployment/test_cmd_health.py",
+                  "int/deployment/test_cmd_sequencer.py",
+                  "int/deployment/test_cmd_systemResources.py",
+                  "int/deployment/test_cmd_uplink.py",
+                  "int/deployment/test_cmd_version.py",
+                  "int/deployment/test_file_handling.py",
+              ]
 
+          print(f"Found {len(tests)} test files")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               handle.write(f"tests={json.dumps(tests)}\n")
           PY
 
   aarch64-integration:
-    name: "AArch64 Linux Integration Tests"
+    name: "Test: ${{ matrix.test_file }}"
     runs-on: ubuntu-22.04-arm
     needs: [cross-compilation, discover-tests]
     strategy:
       fail-fast: false
       matrix:
         test_file: ${{ fromJSON(needs.discover-tests.outputs.tests) }}
+    env:
+      DEPLOYMENT: FprimeYamcsReference_YamcsDeployment
     steps:
-      - name: "Checkout F´ Repository"
+      - name: "Checkout F´"
         uses: actions/checkout@v4
         with:
           sparse-checkout: "requirements.txt"
           sparse-checkout-cone-mode: false
-      - name: "Setup environment"
+
+      - name: "Download build artifacts"
+        uses: actions/download-artifact@v8
+        with:
+          name: aarch64-linux-artifacts
+
+      - name: "Setup Python virtual environment"
         run: |
           python -m venv venv
           . venv/bin/activate
           pip install -r requirements.txt
           echo "${PWD}/venv/bin" >> "${GITHUB_PATH}"
-      # Upgrade GDS to yamcsPOC branch if it exists
-      - name: "Upgrade fprime-gds to yamcsPOC"
+
+      - name: "Install fprime-gds (yamcsPOC branch)"
         uses: nasa/fprime-actions/upgrade-package@devel
         with:
           repository: yvijay99/fprime-gds
           default-branch: yamcsPOC
-      # Upgrade fprime-yamcs to yamcsPOC branch if it exists
-      - name: "Upgrade fprime-yamcs to yamcsPOC"
+
+      - name: "Install fprime-yamcs (yamcsPOC branch)"
         uses: nasa/fprime-actions/upgrade-package@devel
         with:
           repository: yvijay99/fprime-yamcs
           default-branch: yamcsPOC
-      - name: "Artifacts Download"
-        uses: actions/download-artifact@v8
+
+      - name: "Setup Java 17 for YAMCS"
+        uses: actions/setup-java@v4
         with:
-          name: aarch64-linux-artifacts
-      - name: "Clear pytest cache"
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: "Prepare test environment"
         run: |
           find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
           find . -name "*.pyc" -delete 2>/dev/null || true
-      - name: "Start Yamcs test environment"
-        run: |
-          DEPLOYMENT=FprimeYamcsReference_YamcsDeployment
-          . venv/bin/activate
-          mkdir -p ci-logs
           chmod +x ./build-artifacts/aarch64-linux/${DEPLOYMENT}/bin/${DEPLOYMENT}
-          fprime-yamcs --ip-client -d ./build-artifacts/aarch64-linux/${DEPLOYMENT} --logs ./ci-logs &
+          mkdir -p ci-logs
+
+      - name: "Start F´ deployment with YAMCS"
+        run: |
+          . venv/bin/activate
+          fprime-yamcs --ip-client \
+            -d ./build-artifacts/aarch64-linux/${DEPLOYMENT} \
+            --logs ./ci-logs &
           sleep 10
 
-      - name: "Run integration test"
+      - name: "Run test: ${{ matrix.test_file }}"
         run: |
-          DEPLOYMENT=FprimeYamcsReference_YamcsDeployment
           . venv/bin/activate
-          pytest --cache-clear --dictionary ./build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/YamcsDeploymentTopologyDictionary.json ${{ matrix.test_file }}
-      - name: "Archive logs"
+          pytest --cache-clear \
+            --dictionary ./build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/YamcsDeploymentTopologyDictionary.json \
+            -v \
+            ${{ matrix.test_file }}
+
+      - name: "Archive test logs"
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: aarch64-linux-logs
+          name: test-logs-${{ strategy.job-index }}
           path: ci-logs
           retention-days: 5
