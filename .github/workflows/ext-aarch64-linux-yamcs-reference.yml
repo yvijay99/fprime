@@ -166,6 +166,8 @@ jobs:
 
       - name: "Prepare test environment and install latest packages"
         run: |
+          # Restore executable permissions on venv
+          chmod +x venv/bin/*
           # Add venv to PATH
           echo "${PWD}/venv/bin" >> "${GITHUB_PATH}"
           # Activate venv and install latest fprime-gds and fprime-yamcs
@@ -173,8 +175,10 @@ jobs:
           pip install --upgrade pip setuptools
           pip install --upgrade git+https://github.com/yvijay99/fprime-gds.git@yamcsPOC
           pip install --upgrade git+https://github.com/yvijay99/fprime-yamcs.git@yamcsPOC
-          # Verify yamcs-client is installed
-          python -c "import yamcs.tmtc; print('yamcs-client installed successfully')"
+          # Ensure pytest is installed
+          pip install pytest
+          # Verify yamcs-client is installed (correct import path)
+          python -c "import yamcs.client; print('yamcs-client installed successfully')"
           # Clean up Python cache
           find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
           find . -name "*.pyc" -delete 2>/dev/null || true
@@ -188,7 +192,24 @@ jobs:
           fprime-yamcs --ip-client \
             -d ./build-artifacts/aarch64-linux/${DEPLOYMENT} \
             --logs ./ci-logs &
-          sleep 10
+          YAMCS_PID=$!
+          # Wait up to 30 seconds for YAMCS to start
+          for i in {1..30}; do
+            if grep -q "YAMCS.*started" ./ci-logs/*.log 2>/dev/null || \
+               ps -p $YAMCS_PID > /dev/null 2>&1; then
+              echo "YAMCS started successfully"
+              sleep 5  # Give it a few more seconds to stabilize
+              break
+            fi
+            echo "Waiting for YAMCS to start... ($i/30)"
+            sleep 1
+          done
+          # Verify process is still running
+          if ! ps -p $YAMCS_PID > /dev/null 2>&1; then
+            echo "ERROR: YAMCS process died during startup"
+            cat ./ci-logs/*.log 2>/dev/null || true
+            exit 1
+          fi
 
       - name: "Run test: ${{ matrix.test_file }}"
         run: |
@@ -202,6 +223,6 @@ jobs:
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: test-logs-${{ strategy.job-index }}
+          name: test-logs-${{ github.run_id }}-${{ strategy.job-index }}
           path: ci-logs
           retention-days: 5
