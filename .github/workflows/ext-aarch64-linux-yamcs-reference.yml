@@ -91,6 +91,7 @@ jobs:
           . venv/bin/activate
           pytest --dictionary ./build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/YamcsDeploymentTopologyDictionary.json \
             --deployment-config ./int/int_config.json \
+            --use-yamcs \
             -v \
             ./int/
 
