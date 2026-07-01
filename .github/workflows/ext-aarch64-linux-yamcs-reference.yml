@@ -61,10 +61,50 @@ jobs:
           path: aarch64-linux-artifacts
           retention-days: 5
 
+  discover-tests:
+    name: "Set integration test matrix"
+    runs-on: ubuntu-22.04
+    needs: cross-compilation
+    outputs:
+      tests: ${{ steps.list-tests.outputs.tests }}
+    steps:
+      - name: "Set explicit integration test list"
+        id: list-tests
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          tests = [
+              "int/deployment/test_cdh_core.py",
+              "int/deployment/test_cmd_PrmDb.py",
+              "int/deployment/test_cmd_dispatcher.py",
+              "int/deployment/test_cmd_dpCatalog.py",
+              "int/deployment/test_cmd_dpMgr.py",
+              "int/deployment/test_cmd_dpWriter.py",
+              "int/deployment/test_cmd_eventManager.py",
+              "int/deployment/test_cmd_fileDownlink.py",
+              "int/deployment/test_cmd_fileManager.py",
+              "int/deployment/test_cmd_health.py",
+              "int/deployment/test_cmd_sequencer.py",
+              "int/deployment/test_cmd_systemResources.py",
+              "int/deployment/test_cmd_uplink.py",
+              "int/deployment/test_cmd_version.py",
+              "int/deployment/test_file_handling.py",
+          ]
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"tests={json.dumps(tests)}\n")
+          PY
+
   aarch64-integration:
     name: "AArch64 Linux Integration Tests"
     runs-on: ubuntu-22.04-arm
-    needs: cross-compilation
+    needs: [cross-compilation, discover-tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        test_file: ${{ fromJSON(needs.discover-tests.outputs.tests) }}
     steps:
       - name: "Checkout F´ Repository"
         uses: actions/checkout@v4
@@ -97,15 +137,20 @@ jobs:
         run: |
           find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
           find . -name "*.pyc" -delete 2>/dev/null || true
-      - name: Run Integration Tests
+      - name: "Start Yamcs test environment"
         run: |
-           DEPLOYMENT=FprimeYamcsReference_YamcsDeployment
-            . venv/bin/activate
-            mkdir -p ci-logs
-            chmod +x ./build-artifacts/aarch64-linux/${DEPLOYMENT}/bin/${DEPLOYMENT}
-            fprime-yamcs --ip-client -d ./build-artifacts/aarch64-linux/${DEPLOYMENT} --logs ./ci-logs &
-            sleep 10
-            pytest --cache-clear --dictionary ./build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/YamcsDeploymentTopologyDictionary.json ./int/deployment/
+          DEPLOYMENT=FprimeYamcsReference_YamcsDeployment
+          . venv/bin/activate
+          mkdir -p ci-logs
+          chmod +x ./build-artifacts/aarch64-linux/${DEPLOYMENT}/bin/${DEPLOYMENT}
+          fprime-yamcs --ip-client -d ./build-artifacts/aarch64-linux/${DEPLOYMENT} --logs ./ci-logs &
+          sleep 10
+
+      - name: "Run integration test"
+        run: |
+          DEPLOYMENT=FprimeYamcsReference_YamcsDeployment
+          . venv/bin/activate
+          pytest --cache-clear --dictionary ./build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/YamcsDeploymentTopologyDictionary.json ${{ matrix.test_file }}
       - name: "Archive logs"
         uses: actions/upload-artifact@v7
         if: always()
