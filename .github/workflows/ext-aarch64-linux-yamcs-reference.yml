@@ -5,27 +5,13 @@ name: "External Repo: AArch64 Linux Yamcs Reference"
 
 on:
   push:
-    branches: [devel, release/**]
-  pull_request:
-    # The branches below must be a subset of the branches above
-    branches: [devel, release/**]
-    paths-ignore:
-      - "docs/**"
-      - "**.md"
-      - ".github/actions/spelling/**"
-      - ".github/ISSUE_TEMPLATE/**"
-      - ".github/agents/**"
+    branches: [YAMCSCI]
   workflow_dispatch:
-# Cancel in-progress runs if a newer run is started on a given PR
+# Cancel in-progress runs if a newer run is started
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ !contains(github.ref, 'devel') && !contains(github.ref, 'release/')}}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
-env:
-  AARCH64_TOOLCHAIN_DIR: /tmp/aarch64-toolchain
-  AARCH64_TOOLCHAIN_URL: https://developer.arm.com/-/media/Files/downloads/gnu-a/10.2-2020.11/binrel/gcc-arm-10.2-2020.11-x86_64-aarch64-none-linux-gnu.tar.xz
-  ARM_TOOLS_PATH: /tmp/aarch64-toolchain
-  FPRIME_LOCATION: ./lib/fprime
 
 permissions:
   contents: read
@@ -42,37 +28,30 @@ jobs:
     runs-on: ubuntu-22.04
     needs: get-branch
     steps:
-      - name: "Checkout target repository"
-        uses: actions/checkout@v4
+      - name: "Setup external repository + overlay F´"
+        uses: nasa/fprime-actions/external-repository-setup@devel
         with:
-          submodules: false
-          repository: yvijay99/fprime-yamcs-reference 
-          ref: testingyamcsclient
-      - name: "Overlay current F´ revision"
-        uses: actions/checkout@v4
-        with:
-          submodules: true
-          path: ${{ env.FPRIME_LOCATION }}
-          fetch-depth: 0
-      - uses: ./lib/fprime/.github/actions/setup
-        with:
-          location: ${{ env.FPRIME_LOCATION }}
-      - name: "Download and Setup AArch64 Linux Toolchain"
-        run: |
-          mkdir -p ${AARCH64_TOOLCHAIN_DIR}
-          curl -sL ${AARCH64_TOOLCHAIN_URL} -O
-          tar -xf $(basename ${AARCH64_TOOLCHAIN_URL}) -C ${AARCH64_TOOLCHAIN_DIR} --strip-components 1
-          echo "${AARCH64_TOOLCHAIN_DIR}/bin" >> $GITHUB_PATH
-      - name: "Generate AArch64 Linux Build Cache"
-        run: |
-          fprime-util generate aarch64-linux
-      - name: "Build AArch64 Linux"
-        run: |
-          fprime-util build aarch64-linux
+          target_repository: yvijay99/fprime-yamcs-reference
+          target_ref: testingyamcsclient
+      - name: "Cross compile"
+        uses: nasa/fprime-actions/build-with-aarch64-toolchain@devel
       - name: "Prepare artifacts"
         run: |
-          mkdir -p aarch64-linux-artifacts
+          mkdir -p aarch64-linux-artifacts/int
           cp -r ./build-artifacts aarch64-linux-artifacts
+          # Copy integration tests from fprime submodule - preserve directory structure
+          for test_dir in lib/fprime/Svc/*/test/int lib/fprime/Ref/test/int; do
+            if [ -d "$test_dir" ]; then
+              component=$(echo $test_dir | cut -d'/' -f3-4)
+              mkdir -p "aarch64-linux-artifacts/int/$component"
+              cp -r "$test_dir"/* "aarch64-linux-artifacts/int/$component/" 2>/dev/null || true
+            fi
+          done
+          # Also copy YAMCS-specific deployment tests if they exist
+          if [ -d "FprimeYamcsReference/YamcsDeployment/test/int" ]; then
+            mkdir -p aarch64-linux-artifacts/int/deployment
+            cp -r FprimeYamcsReference/YamcsDeployment/test/int/* aarch64-linux-artifacts/int/deployment/
+          fi          
 
       - name: "Archive Build Artifacts"
         uses: actions/upload-artifact@v7
@@ -83,7 +62,7 @@ jobs:
 
   aarch64-integration:
     name: "AArch64 Linux Integration Tests"
-    runs-on: [self-hosted, aarch64-linux]
+    runs-on: ubuntu-22.04
     needs: cross-compilation
     steps:
       - name: "Checkout F´ Repository"
@@ -97,24 +76,31 @@ jobs:
           . venv/bin/activate
           pip install -r requirements.txt
           echo "${PWD}/venv/bin" >> "${GITHUB_PATH}"
-      # Upgrade GDS to devel or pr-xxxx branch if it exists
-      - name: "Upgrade fprime-gds to devel or pr-xxxx"
+      # Upgrade GDS to yamcsPOC branch if it exists
+      - name: "Upgrade fprime-gds to yamcsPOC"
         uses: nasa/fprime-actions/upgrade-package@devel
         with:
-          repository: nasa/fprime-gds
+          repository: yvijay99/fprime-gds
+          branch: yamcsPOC
+      # Upgrade fprime-yamcs to yamcsPOC branch if it exists
+      - name: "Upgrade fprime-yamcs to yamcsPOC"
+        uses: nasa/fprime-actions/upgrade-package@devel
+        with:
+          repository: yvijay99/fprime-yamcs
+          branch: yamcsPOC
       - name: "Artifacts Download"
         uses: actions/download-artifact@v8
         with:
           name: aarch64-linux-artifacts
       - name: Run Integration Tests
         run: |
-          DEPLOYMENT=LedBlinker_LedBlinkerDeployment
-          . venv/bin/activate
-          mkdir -p ci-logs
-          chmod +x ./build-artifacts/aarch64-linux/${DEPLOYMENT}/bin/${DEPLOYMENT}
-          fprime-yamcs --ip-client -d ./build-artifacts/aarch64-linux/${DEPLOYMENT} --logs ./ci-logs &
-          sleep 10
-          pytest pytest ../../lib/fprime/Svc/FileUplink --use-yamcs --deployment-config ./test/int/int_config.json\
+           DEPLOYMENT=fprime-yamcs-reference_YamcsDeployment
+            . venv/bin/activate
+            mkdir -p ci-logs
+            chmod +x ./build-artifacts/aarch64-linux/${DEPLOYMENT}/bin/${DEPLOYMENT}
+            fprime-yamcs --ip-client -d ./build-artifacts/aarch64-linux/${DEPLOYMENT} --logs ./ci-logs &
+            sleep 10
+            pytest --dictionary ./build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/YamcsDeploymentTopologyDictionary.json ./int/
       - name: "Archive logs"
         uses: actions/upload-artifact@v7
         if: always()
