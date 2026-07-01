@@ -1,4 +1,4 @@
-# Cross-compile https://github.com/fprime-community/fprime-workshop-led-blinker
+# Cross-compile https://github.com/yvijay99/fprime-yamcs-reference
 # Runs integration tests on aarch64-linux
 
 name: "External Repo: AArch64 Linux Yamcs Reference"
@@ -7,27 +7,18 @@ on:
   push:
     branches: [YAMCSCI]
   workflow_dispatch:
-# Cancel in-progress runs if a newer run is started
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 
 permissions:
   contents: read
 
 jobs:
-  get-branch:
-    name: "Get target branch"
-    uses: ./.github/workflows/reusable-get-pr-branch.yml
-    with:
-      target_repository: yvijay99/fprime-yamcs-reference
-      default_target_ref: yamcsPOC 
-
   cross-compilation:
     name: "Cross Compilation"
     runs-on: ubuntu-22.04
-    needs: get-branch
     steps:
       - name: "Setup external repository + overlay F´"
         uses: nasa/fprime-actions/external-repository-setup@devel
@@ -38,26 +29,9 @@ jobs:
         uses: nasa/fprime-actions/build-with-aarch64-toolchain@devel
       - name: "Prepare artifacts"
         run: |
-          mkdir -p aarch64-linux-artifacts/int
+          mkdir -p aarch64-linux-artifacts
           cp -r ./build-artifacts aarch64-linux-artifacts
-          # Copy integration tests from fprime submodule - preserve directory structure
-          for test_dir in lib/fprime/Svc/*/test/int lib/fprime/Ref/test/int; do
-            if [ -d "$test_dir" ]; then
-              component=$(echo $test_dir | cut -d'/' -f3-4)
-              mkdir -p "aarch64-linux-artifacts/int/$component"
-              cp -r "$test_dir"/* "aarch64-linux-artifacts/int/$component/" 2>/dev/null || true
-            fi
-          done
-          # Also copy YAMCS-specific deployment tests if they exist
-          if [ -d "FprimeYamcsReference/YamcsDeployment/test/int" ]; then
-            mkdir -p aarch64-linux-artifacts/int/deployment
-            cp -r FprimeYamcsReference/YamcsDeployment/test/int/* aarch64-linux-artifacts/int/deployment/
-            # Ensure int_config.json is copied
-            if [ -f "FprimeYamcsReference/YamcsDeployment/test/int/int_config.json" ]; then
-              cp FprimeYamcsReference/YamcsDeployment/test/int/int_config.json aarch64-linux-artifacts/int/deployment/
-            fi
-          fi          
-
+          cp -r FprimeYamcsReference/YamcsDeployment/test/int aarch64-linux-artifacts
       - name: "Archive Build Artifacts"
         uses: actions/upload-artifact@v7
         with:
@@ -84,32 +58,11 @@ jobs:
           import os
           from pathlib import Path
 
-          # Discover all test files from the artifacts
-          test_dir = Path("int/deployment")
-          if test_dir.exists():
-              tests = sorted([
-                  str(test_file.relative_to("."))
-                  for test_file in test_dir.glob("test_*.py")
-              ])
-          else:
-              # Fallback to explicit list if discovery fails
-              tests = [
-                  "int/deployment/test_cdh_core.py",
-                  "int/deployment/test_cmd_PrmDb.py",
-                  "int/deployment/test_cmd_dispatcher.py",
-                  "int/deployment/test_cmd_dpCatalog.py",
-                  "int/deployment/test_cmd_dpMgr.py",
-                  "int/deployment/test_cmd_dpWriter.py",
-                  "int/deployment/test_cmd_eventManager.py",
-                  "int/deployment/test_cmd_fileDownlink.py",
-                  "int/deployment/test_cmd_fileManager.py",
-                  "int/deployment/test_cmd_health.py",
-                  "int/deployment/test_cmd_sequencer.py",
-                  "int/deployment/test_cmd_systemResources.py",
-                  "int/deployment/test_cmd_uplink.py",
-                  "int/deployment/test_cmd_version.py",
-                  "int/deployment/test_file_handling.py",
-              ]
+          test_dir = Path("int")
+          tests = sorted([
+              str(test_file.relative_to("."))
+              for test_file in test_dir.glob("test_*.py")
+          ])
 
           print(f"Found {len(tests)} test files")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
@@ -126,13 +79,12 @@ jobs:
         with:
           sparse-checkout: "requirements.txt"
           sparse-checkout-cone-mode: false
-
       - name: "Setup Python virtual environment with base dependencies"
         run: |
           python -m venv venv
           . venv/bin/activate
+          pip install --upgrade pip setuptools
           pip install -r requirements.txt
-
       - name: "Archive base virtual environment"
         uses: actions/upload-artifact@v7
         with:
@@ -168,59 +120,30 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: "Prepare test environment and install latest packages"
+      - name: "Install YAMCS packages"
         run: |
-          # Restore executable permissions on venv
           chmod +x venv/bin/*
-          # Add venv to PATH
-          echo "${PWD}/venv/bin" >> "${GITHUB_PATH}"
-          # Activate venv and install latest fprime-gds and fprime-yamcs
           . venv/bin/activate
-          pip install --upgrade pip setuptools
-          pip install --upgrade git+https://github.com/yvijay99/fprime-gds.git@yamcsPOC
-          pip install --upgrade git+https://github.com/yvijay99/fprime-yamcs.git@yamcsPOC
-          # Ensure pytest is installed
-          pip install pytest
-          # Verify yamcs-client is installed (correct import path)
-          python -c "import yamcs.client; print('yamcs-client installed successfully')"
-          # Clean up Python cache
-          find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-          find . -name "*.pyc" -delete 2>/dev/null || true
-          # Make deployment executable
+          pip install git+https://github.com/yvijay99/fprime-gds.git@yamcsPOC
+          pip install git+https://github.com/yvijay99/fprime-yamcs.git@yamcsPOC
+          echo "${PWD}/venv/bin" >> "${GITHUB_PATH}"
+
+      - name: "Prepare deployment"
+        run: |
           chmod +x ./build-artifacts/aarch64-linux/${DEPLOYMENT}/bin/${DEPLOYMENT}
           mkdir -p ci-logs
 
       - name: "Start F´ deployment with YAMCS"
         run: |
           . venv/bin/activate
-          fprime-yamcs --ip-client \
-            -d ./build-artifacts/aarch64-linux/${DEPLOYMENT} \
-            --logs ./ci-logs &
-          YAMCS_PID=$!
-          # Wait up to 30 seconds for YAMCS to start
-          for i in {1..30}; do
-            if grep -q "YAMCS.*started" ./ci-logs/*.log 2>/dev/null || \
-               ps -p $YAMCS_PID > /dev/null 2>&1; then
-              echo "YAMCS started successfully"
-              sleep 5  # Give it a few more seconds to stabilize
-              break
-            fi
-            echo "Waiting for YAMCS to start... ($i/30)"
-            sleep 1
-          done
-          # Verify process is still running
-          if ! ps -p $YAMCS_PID > /dev/null 2>&1; then
-            echo "ERROR: YAMCS process died during startup"
-            cat ./ci-logs/*.log 2>/dev/null || true
-            exit 1
-          fi
+          fprime-yamcs --ip-client -d ./build-artifacts/aarch64-linux/${DEPLOYMENT} --logs ./ci-logs &
+          sleep 15
 
       - name: "Run test: ${{ matrix.test_file }}"
         run: |
           . venv/bin/activate
-          pytest --cache-clear \
-            --dictionary ./build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/YamcsDeploymentTopologyDictionary.json \
-            --config int/deployment/int_config.json \
+          pytest --dictionary ./build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/YamcsDeploymentTopologyDictionary.json \
+            --deployment-config ./int/int_config.json \
             -v \
             ${{ matrix.test_file }}
 
@@ -228,6 +151,6 @@ jobs:
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: test-logs-${{ github.run_id }}-${{ strategy.job-index }}
+          name: test-logs-${{ strategy.job-index }}
           path: ci-logs
           retention-days: 5
