@@ -21,7 +21,8 @@ jobs:
     name: "Get target branch"
     uses: ./.github/workflows/reusable-get-pr-branch.yml
     with:
-      target_repository: yvijay99/fprime-yamcs-reference 
+      target_repository: yvijay99/fprime-yamcs-reference
+      default_target_ref: yamcsPOC 
 
   cross-compilation:
     name: "Cross Compilation"
@@ -81,13 +82,13 @@ jobs:
         uses: nasa/fprime-actions/upgrade-package@devel
         with:
           repository: yvijay99/fprime-gds
-          branch: yamcsPOC
+          default-branch: yamcsPOC
       # Upgrade fprime-yamcs to yamcsPOC branch if it exists
       - name: "Upgrade fprime-yamcs to yamcsPOC"
         uses: nasa/fprime-actions/upgrade-package@devel
         with:
           repository: yvijay99/fprime-yamcs
-          branch: yamcsPOC
+          default-branch: yamcsPOC
       - name: "Artifacts Download"
         uses: actions/download-artifact@v8
         with:
