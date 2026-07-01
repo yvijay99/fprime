@@ -9,9 +9,7 @@ module Ref {
     rateGroup2
     rateGroup3
   }
-
-
-
+  
   topology Ref {
     # ----------------------------------------------------------------------
     # Subtopology instances
@@ -138,7 +136,7 @@ module Ref {
       # Send filled DP
       SG1.productSendOut -> DataProducts.Subtopology.productSendIn
       # Synchronous request
-      dpDemo.productGetOut -> DataProducts.Subtopology.productGetIn
+      dpDemo.productGetOut -> DataProducts.Subtopology.productGetIn 
       # Send filled DP
       dpDemo.productSendOut -> DataProducts.Subtopology.productSendIn
       # Asynchronous request
@@ -157,6 +155,7 @@ module Ref {
       cmdSeq.comCmdOut                       -> CdhCore.Subtopology.seqCmdBuff
       CdhCore.Subtopology.seqCmdStatus       -> cmdSeq.cmdResponseIn
     }
+
 
     connections ComCcsds_FileHandling {
       # File Downlink <-> ComQueue

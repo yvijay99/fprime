@@ -13,3 +13,5 @@
     "Svc.DpWriter": "DataProducts.dpWriter",
     "Svc.Health": "CdhCore.health"
 }
+
+//component name : instance in the namespace 
