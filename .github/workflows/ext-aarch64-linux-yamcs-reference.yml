@@ -112,16 +112,10 @@ jobs:
               handle.write(f"tests={json.dumps(tests)}\n")
           PY
 
-  aarch64-integration:
-    name: "Test: ${{ matrix.test_file }}"
+  setup-test-environment:
+    name: "Setup Base Test Environment"
     runs-on: ubuntu-22.04-arm
-    needs: [cross-compilation, discover-tests]
-    strategy:
-      fail-fast: false
-      matrix:
-        test_file: ${{ fromJSON(needs.discover-tests.outputs.tests) }}
-    env:
-      DEPLOYMENT: FprimeYamcsReference_YamcsDeployment
+    needs: cross-compilation
     steps:
       - name: "Checkout F´"
         uses: actions/checkout@v4
@@ -129,29 +123,40 @@ jobs:
           sparse-checkout: "requirements.txt"
           sparse-checkout-cone-mode: false
 
+      - name: "Setup Python virtual environment with base dependencies"
+        run: |
+          python -m venv venv
+          . venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: "Archive base virtual environment"
+        uses: actions/upload-artifact@v7
+        with:
+          name: base-test-venv
+          path: venv
+          retention-days: 1
+
+  aarch64-integration:
+    name: "Test: ${{ matrix.test_file }}"
+    runs-on: ubuntu-22.04-arm
+    needs: [cross-compilation, discover-tests, setup-test-environment]
+    strategy:
+      fail-fast: false
+      matrix:
+        test_file: ${{ fromJSON(needs.discover-tests.outputs.tests) }}
+    env:
+      DEPLOYMENT: FprimeYamcsReference_YamcsDeployment
+    steps:
       - name: "Download build artifacts"
         uses: actions/download-artifact@v8
         with:
           name: aarch64-linux-artifacts
 
-      - name: "Setup Python virtual environment"
-        run: |
-          python -m venv venv
-          . venv/bin/activate
-          pip install -r requirements.txt
-          echo "${PWD}/venv/bin" >> "${GITHUB_PATH}"
-
-      - name: "Install fprime-gds (yamcsPOC branch)"
-        uses: nasa/fprime-actions/upgrade-package@devel
+      - name: "Download base test environment"
+        uses: actions/download-artifact@v8
         with:
-          repository: yvijay99/fprime-gds
-          default-branch: yamcsPOC
-
-      - name: "Install fprime-yamcs (yamcsPOC branch)"
-        uses: nasa/fprime-actions/upgrade-package@devel
-        with:
-          repository: yvijay99/fprime-yamcs
-          default-branch: yamcsPOC
+          name: base-test-venv
+          path: venv
 
       - name: "Setup Java 17 for YAMCS"
         uses: actions/setup-java@v4
@@ -159,10 +164,20 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: "Prepare test environment"
+      - name: "Prepare test environment and install latest packages"
         run: |
+          # Add venv to PATH
+          echo "${PWD}/venv/bin" >> "${GITHUB_PATH}"
+          # Activate venv and install latest fprime-gds and fprime-yamcs
+          . venv/bin/activate
+          pip install --upgrade git+https://github.com/yvijay99/fprime-gds.git@yamcsPOC
+          pip install --upgrade git+https://github.com/yvijay99/fprime-yamcs.git@yamcsPOC
+          # Verify yamcs-client is installed
+          python -c "import yamcs.tmtc; print('yamcs-client installed successfully')"
+          # Clean up Python cache
           find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
           find . -name "*.pyc" -delete 2>/dev/null || true
+          # Make deployment executable
           chmod +x ./build-artifacts/aarch64-linux/${DEPLOYMENT}/bin/${DEPLOYMENT}
           mkdir -p ci-logs
 
