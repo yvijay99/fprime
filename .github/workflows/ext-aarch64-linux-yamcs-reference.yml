@@ -52,6 +52,10 @@ jobs:
           if [ -d "FprimeYamcsReference/YamcsDeployment/test/int" ]; then
             mkdir -p aarch64-linux-artifacts/int/deployment
             cp -r FprimeYamcsReference/YamcsDeployment/test/int/* aarch64-linux-artifacts/int/deployment/
+            # Ensure int_config.json is copied
+            if [ -f "FprimeYamcsReference/YamcsDeployment/test/int/int_config.json" ]; then
+              cp FprimeYamcsReference/YamcsDeployment/test/int/int_config.json aarch64-linux-artifacts/int/deployment/
+            fi
           fi          
 
       - name: "Archive Build Artifacts"
@@ -216,6 +220,7 @@ jobs:
           . venv/bin/activate
           pytest --cache-clear \
             --dictionary ./build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/YamcsDeploymentTopologyDictionary.json \
+            --config int/deployment/int_config.json \
             -v \
             ${{ matrix.test_file }}
 
