@@ -49,13 +49,17 @@ jobs:
       - name: "Checkout F´ Repository"
         uses: actions/checkout@v4
         with:
-          sparse-checkout: "requirements.txt"
-          sparse-checkout-cone-mode: false
+          fetch-depth: 0
 
       - name: "Download build artifacts"
         uses: actions/download-artifact@v8
         with:
           name: aarch64-linux-artifacts
+
+      - name: "Setup F´ Tools"
+        uses: nasa/fprime-actions/setup@devel
+        with:
+          location: ${{ github.workspace }}
 
       - name: "Setup Java 17 for YAMCS"
         uses: actions/setup-java@v4
@@ -63,17 +67,12 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: "Setup Python environment"
+      - name: "Install YAMCS dependencies"
         run: |
-          python -m venv venv
-          . venv/bin/activate
-          pip install --upgrade pip setuptools
-          pip install -r requirements.txt
           # Install yamcs-client 1.x which has yamcs.tmtc module
           pip install "yamcs-client<2.0.0"
           pip install git+https://github.com/yvijay99/fprime-gds.git@yamcsPOC
           pip install git+https://github.com/yvijay99/fprime-yamcs.git@yamcsPOC
-          echo "${PWD}/venv/bin" >> "${GITHUB_PATH}"
 
       - name: "Prepare deployment"
         run: |
@@ -82,19 +81,22 @@ jobs:
 
       - name: "Start F´ deployment with YAMCS"
         run: |
-          . venv/bin/activate
-          fprime-yamcs --ip-client -d ./build-artifacts/aarch64-linux/${DEPLOYMENT} --logs ./ci-logs &
+          # Verify dictionary exists
+          ls -la ./build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/ || true
+
+          fprime-yamcs --ip-client \
+            -d ${PWD}/build-artifacts/aarch64-linux/${DEPLOYMENT} \
+            --logs ${PWD}/ci-logs &
           sleep 15
           # Check if YAMCS started successfully
           if ! jobs -r | grep -q fprime-yamcs; then
             echo "ERROR: YAMCS failed to start"
-            cat ./ci-logs/*.log 2>/dev/null || true
+            cat ${PWD}/ci-logs/*.log 2>/dev/null || true
             exit 1
           fi
 
       - name: "Run integration tests"
         run: |
-          . venv/bin/activate
           pytest --dictionary ./build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/YamcsDeploymentTopologyDictionary.json \
             --deployment-config ./int/int_config.json \
             --use-yamcs \
