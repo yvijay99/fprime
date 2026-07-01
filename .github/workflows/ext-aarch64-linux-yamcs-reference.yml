@@ -83,11 +83,14 @@ jobs:
       - name: "Start F´ deployment with YAMCS"
         run: |
           . venv/bin/activate
-          fprime-yamcs --ip-client \
-            -d ${PWD}/build-artifacts/aarch64-linux/${DEPLOYMENT} \
-            --dictionary ${PWD}/build-artifacts/aarch64-linux/${DEPLOYMENT}/dict/YamcsDeploymentTopologyDictionary.json \
-            --logs ${PWD}/ci-logs &
+          fprime-yamcs --ip-client -d ./build-artifacts/aarch64-linux/${DEPLOYMENT} --logs ./ci-logs &
           sleep 15
+          # Check if YAMCS started successfully
+          if ! jobs -r | grep -q fprime-yamcs; then
+            echo "ERROR: YAMCS failed to start"
+            cat ./ci-logs/*.log 2>/dev/null || true
+            exit 1
+          fi
 
       - name: "Run integration tests"
         run: |
