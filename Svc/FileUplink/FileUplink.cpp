@@ -32,6 +32,10 @@ FileUplink::FileUplink(const char* const name)
 
 FileUplink::~FileUplink() {}
 
+void FileUplink::configure(const char* directory) {
+    this->m_file.osFile.configure(directory);
+}
+
 // ----------------------------------------------------------------------
 // Handler implementations for user-defined typed input ports
 // ----------------------------------------------------------------------
@@ -79,7 +83,7 @@ void FileUplink::bufferSendIn_handler(const FwIndexType portNum, Fw::Buffer& buf
                 this->handleCancelPacket();
                 break;
             default:
-                FW_ASSERT(0);
+                FW_ASSERT(false);
                 break;
         }
     }
