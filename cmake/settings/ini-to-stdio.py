@@ -2,6 +2,7 @@
 
 Loads fprime style ini files into a format CMake can process.
 """
+
 import argparse
 import os.path
 import sys
