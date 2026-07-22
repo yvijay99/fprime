@@ -33,7 +33,7 @@ void SocketComponentHelper::start(const Fw::ConstStringBase& name,
               Os::Task::State::NOT_STARTED);  // It is a coding error to start this task multiple times
     this->m_reconnectStop = false;
     Fw::String reconnectName;
-    reconnectName.format("%s_reconnect", name.toChar());
+    (void)reconnectName.format("%s_reconnect", name.toChar());  // task name may safely truncate
     Os::Task::Arguments reconnectArguments(reconnectName, SocketComponentHelper::reconnectTask, this, priorityReconnect,
                                            stackReconnect, cpuAffinityReconnect);
     Os::Task::Status reconnectStat = m_reconnectTask.start(reconnectArguments);
@@ -200,6 +200,7 @@ SocketIpStatus SocketComponentHelper::recv(U8* data, FwSizeType& size) {
 
 void SocketComponentHelper::readLoop() {
     SocketIpStatus status = SOCK_SUCCESS;
+    // @non-terminating@: runs until the socket component is stopped
     do {
         // Prevent transmission before connection, or after a disconnect
         if ((not this->isOpened()) and this->running()) {
@@ -215,7 +216,7 @@ void SocketComponentHelper::readLoop() {
             Fw::Buffer buffer = this->getBuffer();
             if (buffer.isValid()) {
                 U8* data = buffer.getData();
-                FW_ASSERT(data);
+                FW_ASSERT(data != nullptr);
                 FwSizeType size = buffer.getSize();
                 // recv blocks, so it may have been a while since its done an isOpened check
                 status = this->recv(data, size);
@@ -243,7 +244,7 @@ void SocketComponentHelper::readLoop() {
 }
 
 void SocketComponentHelper::readTask(void* pointer) {
-    FW_ASSERT(pointer);
+    FW_ASSERT(pointer != nullptr);
     SocketComponentHelper* self = reinterpret_cast<SocketComponentHelper*>(pointer);
     self->readLoop();
 }
@@ -268,11 +269,16 @@ bool SocketComponentHelper::runningReconnect() {
 
 void SocketComponentHelper::reconnectLoop() {
     SocketIpStatus status = SOCK_SUCCESS;
+    // @non-terminating@: runs until the reconnect thread is stopped
     while (this->runningReconnect()) {
         // Check if we need to reconnect
         bool reconnect = false;
         {
             Os::ScopeLock scopedLock(this->m_reconnectLock);
+            FW_ASSERT(this->m_reconnectState == ReconnectState::NOT_RECONNECTING ||
+                          this->m_reconnectState == ReconnectState::REQUEST_RECONNECT ||
+                          this->m_reconnectState == ReconnectState::RECONNECT_IN_PROGRESS,
+                      static_cast<FwAssertArgType>(this->m_reconnectState));
             if (this->m_reconnectState == ReconnectState::REQUEST_RECONNECT) {
                 this->m_reconnectState = ReconnectState::RECONNECT_IN_PROGRESS;
                 reconnect = true;
@@ -315,7 +321,7 @@ void SocketComponentHelper::reconnectLoop() {
 }
 
 void SocketComponentHelper::reconnectTask(void* pointer) {
-    FW_ASSERT(pointer);
+    FW_ASSERT(pointer != nullptr);
     SocketComponentHelper* self = reinterpret_cast<SocketComponentHelper*>(pointer);
     self->reconnectLoop();
 }
@@ -336,6 +342,7 @@ SocketIpStatus SocketComponentHelper::waitForReconnect(Fw::TimeInterval timeout)
 
     Fw::TimeInterval elapsed = Fw::TimeInterval(0, 0);
 
+    // @non-terminating@: time-bounded wait for the reconnect thread
     while (elapsed < timeout) {
         // If the reconnect thread is NOT reconnecting, we are done waiting
         // If we are no longer running the reconnect thread, we are done waiting
